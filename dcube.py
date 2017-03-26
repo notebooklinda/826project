@@ -17,7 +17,9 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr):
     RN = []
     for col in dim_attr:
         cur.execute("SELECT distinct %s FROM %s" % (col, TS_TABLE_COPY))
-        RN.append(cur.fetchall())
+        Rn_list = cur.fetchall()
+        Rn = {key:None for (key,) in Rn_list}
+        RN.append(Rn)
 
     result_names = []
     for i in range(k):
@@ -39,7 +41,7 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr):
         
         to_delete = []
         for col, Bn in zip(dim_attr, BN):
-            to_delete.append('%s in (%s)' % (col, ', '.join(("'%s'" % n[0]) for n in Bn)))
+            to_delete.append('%s in (%s)' % (col, ', '.join(("'%s'" % n) for n in Bn)))
         where_clause = ' '.join(['WHERE', ' AND '.join(to_delete)])
         
         cur.execute("DELETE FROM %s %s" % (TS_TABLE_COPY, where_clause))
@@ -96,47 +98,48 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
     
     
     while sum(len(Bn) for Bn in BN):
-        
+        print sum(len(Bn) for Bn in BN)
+        # import pdb; pdb.set_trace()
         mass_BN = [{} for _ in RN]
         for i, Rn in enumerate(RN): 
             for name in Rn:
-                mass_BN[i][name[0]] = 0.0
+                mass_BN[i][name] = 0.0
         
-        
-        for i, (col, Bn) in enumerate(zip(dim_attr, BN)):
+        for i, col in enumerate(dim_attr):
             cur.execute("SELECT %s, sum(%s)" % (col, measure_attr) +
                         " FROM %s" % TS_TABLE_B +
                         " GROUP BY %s" % col)
             mass_Bn_list = cur.fetchall()
             for name, mass in mass_Bn_list:
                 mass_BN[i][name] = mass
+
         
-        #idx = select_dimension_by_cardinality(BN)
-        idx = select_dimension_by_density(BN, RN, mass_BN, mass_B, mass_R, 'ari')
+        idx = select_dimension_by_cardinality(BN)
+        # idx = select_dimension_by_density(BN, RN, mass_BN, mass_B, mass_R, 'ari')
         mass_avg = mass_B / float(len(BN[idx]))
         
-        try:
-            mass_i_array = np.array([mass_BN[idx][n[0]] for n in BN[idx]])
-        except:
-            import pdb; pdb.set_trace()
+        BN_idx_list = BN[idx].keys()
+        mass_i_array = np.array([mass_BN[idx][n] for n in BN_idx_list])
         
         D_idx = np.where(mass_i_array <= mass_avg)[0]
-        Di = [BN[idx][i] for i in D_idx]
-        Di_sorted_idx = np.argsort([mass_BN[idx][n[0]] for n in Di])
+        Di = [BN_idx_list[i] for i in D_idx]
+        Di_sorted_idx = np.argsort([mass_BN[idx][n] for n in Di])
         Di_sorted = [Di[i] for i in Di_sorted_idx]
         
+        # import pdb; pdb.set_trace()
+        
         for n in Di_sorted:
-            a = n[0]
-            BN[idx].remove(n)
-            mass_B -= mass_BN[idx][a]
+            BN[idx].pop(n)
+            mass_B -= mass_BN[idx][n]
             rho_prime = density(mass_B, BN, mass_R, RN, density_type)
-            order[idx][a] = r
+            order[idx][n] = r
             r += 1
             if rho_prime > rho_tilda:
                 rho_tilda = rho_prime
                 r_tilda = r
         
-        attr_set = ', '.join(''.join(["'", n[0], "'"]) for n in Di_sorted)
+        
+        attr_set = ', '.join(''.join(["'", n, "'"]) for n in Di_sorted)
         condition = ' '.join([dim_attr[idx], 'in (', attr_set, ')'])
         
         # print '#### before ####'
@@ -145,7 +148,9 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
         
         # import pdb; pdb.set_trace()
         
-        cur.execute("DELETE FROM %s WHERE %s" % (TS_TABLE_B, condition))
+        
+        if len(condition):
+            cur.execute("DELETE FROM %s WHERE %s" % (TS_TABLE_B, condition))
         db_conn.commit()
         
         # print '#### after ####'
@@ -166,8 +171,8 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
     B_tilda_N = []
     for i, Rn in enumerate(RN):
         B_tilda_n = []
-        for name in Rn:
-            if order[i][name[0]] >= r_tilda:
+        for name in Rn.iterkeys():
+            if order[i][name] >= r_tilda:
                 B_tilda_n.append(name)
         B_tilda_N.append(B_tilda_n)
     return B_tilda_N
@@ -197,23 +202,23 @@ def select_dimension_by_density(BN, RN, mass_BN, mass_B, mass_R, density_type):
     BN_prime = deepcopy(BN)
     
     for idx in range(len(BN)):
-        if len(BN[idx]):
-            mass_avg = mass_B / float(len(BN[idx]))
+        BN_idx_list = BN[idx].keys()
+        if len(BN_idx_list):
+            mass_avg = mass_B / float(len(BN_idx_list))
         
             try:
-                mass_i_array = np.array([mass_BN[idx][n[0]] for n in BN[idx]])
+                mass_i_array = np.array([mass_BN[idx][n] for n in BN_idx_list])
             except:
                 import pdb; pdb.set_trace()
         
             D_idx = np.where(mass_i_array <= mass_avg)[0]
-            Di = [BN[idx][i] for i in D_idx]
+            Di = [BN_idx_list[i] for i in D_idx]
             
             total = 0
             for n in Di:
-                a = n[0]
                 #import pdb; pdb.set_trace()
-                BN_prime[idx].remove(n)
-                total += mass_BN[idx][a]
+                BN_prime[idx].pop(n)
+                total += mass_BN[idx][n]
             mass_B_prime = mass_B - total
             
             BN_new = deepcopy(BN)
