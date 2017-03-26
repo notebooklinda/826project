@@ -22,10 +22,12 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
         RN.append(Rn)
 
     result_names = []
+    density_blocks = []
     for i in range(k):
         cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, TS_TABLE_COPY))
         mass_R = cur.fetchone()[0]
-        BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy)
+        BN, density_BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy)
+        density_blocks.append(density_BN)
         
         to_delete = []
         for col, Bn in zip(dim_attr, BN):
@@ -49,6 +51,7 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
 
     db_conn.commit()
     cur.close()
+    return density_blocks
 
 def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy):
     cur = db_conn.cursor()
@@ -63,6 +66,14 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
     r, r_tilda = 1, 1
     order = [{} for _ in range(len(dim_attr))]
     
+    mass_RN = [{} for _ in RN]
+    for i, col in enumerate(dim_attr):
+        cur.execute("SELECT %s, sum(%s)" % (col, measure_attr) +
+                    " FROM %s" % TS_TABLE_B +
+                    " GROUP BY %s" % col)
+        mass_Rn_list = cur.fetchall()
+        for name, mass in mass_Rn_list:
+            mass_RN[i][name] = mass
     
     while sum(len(Bn) for Bn in BN):
         mass_BN = [{} for _ in RN]
@@ -122,7 +133,18 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
             if order[i][name] >= r_tilda:
                 B_tilda_n.append(name)
         B_tilda_N.append(B_tilda_n)
-    return B_tilda_N
+    
+    mass_B_tilda_N = 0.0
+    for name in RN[0].iterkeys():
+        if order[0][name] >= r_tilda:
+            mass_B_tilda_N += mass_RN[0][name]
+    
+    
+    import pdb; pdb.set_trace()
+    # calculate B_tilda_N's density
+    density_B_tilda_N = density(mass_B_tilda_N, B_tilda_N, mass_R, RN, density_type)
+    
+    return B_tilda_N, density_B_tilda_N
 
     
 def density(mass_B, BN, mass_R, RN, option):
@@ -231,7 +253,11 @@ def main():
         if args.measure_attr_idx is None:
             ts_sql_add_default_measure(db_conn, TS_TABLE, DEF_MEASURE)
         
-        d_cube(db_conn, args.num_dense_blocks, None, dim_attr, measure_attr, args.density_type, args.selection_policy)
+        density_blocks = d_cube(db_conn, args.num_dense_blocks, None, dim_attr, measure_attr, args.density_type, args.selection_policy)
+        
+        print '### RESULT ###'
+        for i, density in enumerate(density_blocks):
+            print ' dense block{:d} stored in {:s} with density {:f}'.format(i, TS_RESULT + str(i), density)
 
         ts_db_bubye(db_conn)
         
