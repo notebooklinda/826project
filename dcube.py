@@ -4,7 +4,7 @@ import sys
 import argparse
 from copy import deepcopy
 import numpy as np
-
+import time
 
 def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_policy):
     cur = db_conn.cursor()
@@ -44,10 +44,10 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
         cur.execute("CREATE TABLE %s AS SELECT * FROM %s %s" % (result_table, TS_TABLE, where_clause))
         db_conn.commit()
     
-    for i in range(k):
-        print '#### result ####'
-        cur.execute("SELECT * FROM TS_RESULT%d" %(i))
-        print cur.fetchall()
+    # for i in range(k):
+        # print '#### result ####'
+        # cur.execute("SELECT * FROM TS_RESULT%d" %(i))
+        # print cur.fetchall()
 
     db_conn.commit()
     cur.close()
@@ -140,7 +140,6 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
             mass_B_tilda_N += mass_RN[0][name]
     
     
-    import pdb; pdb.set_trace()
     # calculate B_tilda_N's density
     density_B_tilda_N = density(mass_B_tilda_N, B_tilda_N, mass_R, RN, density_type)
     
@@ -198,6 +197,7 @@ def select_dimension_by_density(BN, RN, mass_BN, mass_B, mass_R, density_type):
       
 
 def main():
+    start_time = time.time()
     global db_conn
     db_conn = None
     parser = argparse.ArgumentParser(description="Find dense blocks by Dcube")
@@ -257,7 +257,7 @@ def main():
         
         print '### RESULT ###'
         for i, density in enumerate(density_blocks):
-            print ' dense block{:d} stored in {:s} with density {:f}'.format(i, TS_RESULT + str(i), density)
+            print 'dense block {:d} stored in {:s} with density {:f}'.format(i, TS_RESULT + str(i), density)
 
         ts_db_bubye(db_conn)
         
@@ -267,7 +267,7 @@ def main():
             ts_db_bubye(db_conn)            
         raise                    
 
-        
+    print 'Elapsed time %f s' % (time.time() - start_time)
 
         
 if __name__ == '__main__':
