@@ -1,3 +1,3 @@
 #!/bin/bash
-pg_ctl -D $HOME/public/826prj stop
+pg_ctl -D /tmp/pg_db stop
 

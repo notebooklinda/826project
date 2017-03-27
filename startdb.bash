@@ -1,3 +1,3 @@
 #!/bin/bash
-pg_ctl -D $HOME/public/826prj -o '-k /tmp' start
+pg_ctl -D /tmp/pg_db -o '-k /tmp' start
 

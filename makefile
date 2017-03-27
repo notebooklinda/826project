@@ -22,6 +22,21 @@ darpa:
 	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'geo' --selection_policy 'density' --num_dense_blocks 1 > geo_density
 	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'susp' --selection_policy 'density' --num_dense_blocks 1 > susp_density
 	
+darpa_ari_cardinality:
+	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'ari' --selection_policy 'cardinality' --num_dense_blocks 1 > `pwd`/output/ari_cardinality
 
+darpa_geo_cardinality:
+	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'geo' --selection_policy 'cardinality' --num_dense_blocks 1 > `pwd`/output/geo_cardinality
 
+darpa_susp_cardinality:
+	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'susp' --selection_policy 'cardinality' --num_dense_blocks 1 > `pwd`/output/susp_cardinality
+
+darpa_ari_density:
+	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'ari' --selection_policy 'density' --num_dense_blocks 1 > `pwd`/output/ari_density
+
+darpa_geo_density:
+	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'geo' --selection_policy 'density' --num_dense_blocks 1 > `pwd`/output/geo_density
+
+darpa_susp_density:
+	python -u dcube.py --file `pwd`/data/darpa.csv --colname 'source_ip destination_id time_in_minutes' --density_type 'susp' --selection_policy 'density' --num_dense_blocks 1 > `pwd`/output/susp_density
 

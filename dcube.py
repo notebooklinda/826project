@@ -23,11 +23,13 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
 
     result_names = []
     density_blocks = []
+    length_blocks = []
     for i in range(k):
         cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, TS_TABLE_COPY))
         mass_R = cur.fetchone()[0]
         BN, density_BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy)
         density_blocks.append(density_BN)
+        length_blocks.append(len(BN[0]))
         
         to_delete = []
         for col, Bn in zip(dim_attr, BN):
@@ -51,7 +53,7 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
 
     db_conn.commit()
     cur.close()
-    return density_blocks
+    return density_blocks, length_blocks
 
 def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy):
     cur = db_conn.cursor()
@@ -254,11 +256,11 @@ def main():
         if args.measure_attr_idx is None:
             ts_sql_add_default_measure(db_conn, TS_TABLE, DEF_MEASURE)
         
-        density_blocks = d_cube(db_conn, args.num_dense_blocks, None, dim_attr, measure_attr, args.density_type, args.selection_policy)
+        density_blocks, length_blocks = d_cube(db_conn, args.num_dense_blocks, None, dim_attr, measure_attr, args.density_type, args.selection_policy)
         
         print '### RESULT ###'
         for i, density in enumerate(density_blocks):
-            print 'dense block {:d} stored in {:s} with density {:f}'.format(i, TS_RESULT + str(i), density)
+            print 'dense block {:d} having {:d} tuples stored in {:s} with density {:f}'.format(i, length_blocks[i], TS_RESULT + str(i), density)
 
         ts_db_bubye(db_conn)
         

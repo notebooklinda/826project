@@ -1,5 +1,5 @@
 #!/bin/bash
-initdb $HOME/public/826prj
-pg_ctl -D $HOME/public/826prj -o '-k /tmp' start
+initdb /tmp/pg_db
+pg_ctl -D /tmp/pg_db -o '-k /tmp' start
 createdb $USER
 
