@@ -76,6 +76,7 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
             mass_RN[i][name] = mass
     
     while sum(len(Bn) for Bn in BN):
+        print sum(len(Bn) for Bn in BN)
         mass_BN = [{} for _ in RN]
         for i, Rn in enumerate(RN): 
             for name in Rn:
