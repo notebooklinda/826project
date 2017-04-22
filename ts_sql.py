@@ -34,7 +34,6 @@ def ts_sql_table_drop_create(db_conn, table_name, create_sql_cols, drop=True):
     cur.close();
     
 # Load table from file 
-# TODO: Optimize loading
 def ts_sql_load_table_from_file(db_conn, table_name, col_fmt, file_name, delim):
     cur = db_conn.cursor()
     
@@ -52,4 +51,10 @@ def ts_sql_add_default_measure(db_conn, table_name, measure_name):
     cur.close()
     print "Add a measure attribute named %s" % (measure_name) 
 
-    
+
+def ts_sql_add_keep(db_conn, table_name):
+    cur = db_conn.cursor()
+    cur.execute("ALTER TABLE %s ADD COLUMN %s Boolean DEFAULT True" % (table_name, 'keep'))    
+    db_conn.commit()
+    cur.close()
+    print "Added keep column"

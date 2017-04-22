@@ -6,7 +6,7 @@ from copy import deepcopy
 import numpy as np
 import time
 
-def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy):
+def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy, copy_table):
     cur = db_conn.cursor()
 
     # copy R to Rori
@@ -27,7 +27,7 @@ def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy):
     for i in range(k):
         cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, TS_TABLE_COPY))
         mass_R = cur.fetchone()[0]
-        BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy)
+        BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy, copy_table)
         
         to_delete = []
         for col, Bn in zip(dim_attr, BN):
@@ -57,13 +57,20 @@ def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy):
     cur.close()
     return density_blocks, length_blocks
 
-def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy):
+def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy, copy_table):
     cur = db_conn.cursor()
 
-    # copy R to B
-    ts_sql_table_drop(db_conn, TS_TABLE_B)
-    cur.execute("CREATE TABLE %s AS SELECT * FROM %s" % (TS_TABLE_B, table_name))
+    if copy_table:
+        # copy R to B
+        ts_sql_table_drop(db_conn, TS_TABLE_B)
+        cur.execute("CREATE TABLE %s AS SELECT * FROM %s" % (TS_TABLE_B, table_name))
+        use_as_B = TS_TABLE_B
+    else:
+        # set R's keep to all True
+        cur.execute("UPDATE %s SET keep = True" % table_name)
+        use_as_B = table_name
     db_conn.commit()
+
     mass_B = mass_R
     BN = deepcopy(RN)
     rho_tilda = density(mass_B, BN, mass_R, RN, density_type)
@@ -73,7 +80,8 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
     mass_RN = [{} for _ in RN]
     for i, col in enumerate(dim_attr):
         cur.execute("SELECT %s, sum(%s)" % (col, measure_attr) +
-                    " FROM %s" % TS_TABLE_B +
+                    " FROM %s" % use_as_B +
+                    " WHERE keep = True" +
                     " GROUP BY %s" % col)
         mass_Rn_list = cur.fetchall()
         for name, mass in mass_Rn_list:
@@ -88,7 +96,8 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
         
         for i, col in enumerate(dim_attr):
             cur.execute("SELECT %s, sum(%s)" % (col, measure_attr) +
-                        " FROM %s" % TS_TABLE_B +
+                        " FROM %s" % use_as_B +
+                        " WHERE keep = True" +
                         " GROUP BY %s" % col)
             mass_Bn_list = cur.fetchall()
             for name, mass in mass_Bn_list:
@@ -125,7 +134,10 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
         condition = ' '.join([dim_attr[idx], 'in (', attr_set, ')'])
 
         if attr_set != '':
-            cur.execute("DELETE FROM %s WHERE %s" % (TS_TABLE_B, condition))
+            if copy_table:
+                cur.execute("DELETE FROM %s WHERE %s" % (TS_TABLE_B, condition))
+            else:
+                cur.execute("UPDATE %s SET keep = False WHERE %s" % (table_name, condition))
         db_conn.commit()
 
     db_conn.commit()
@@ -141,7 +153,6 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
         B_tilda_N.append(B_tilda_n)
     
     return B_tilda_N
-
     
 def density(mass_B, BN, mass_R, RN, option):
     if option == 'ari':
@@ -219,7 +230,9 @@ def main():
     parser.add_argument ('--selection_policy', dest='selection_policy', type=str, default='cardinality',
                          help="Dimension selection policy. Choose from 'cardinality' or 'density'. default 'cardinality'")
     parser.add_argument ('--verbose', dest='verbose', type=bool, default=False,
-                         help="Print the selected k dense blocks. default 'Not print'")                     
+                         help="Print the selected k dense blocks. default 'Not print'")
+    parser.add_argument ('--copy_table', dest='copy_table', type=bool, default=False,
+                         help="Copy table mode in find_single_block. default False")
                          
     args = parser.parse_args()
     with open(args.input_file) as csv:
@@ -251,8 +264,9 @@ def main():
         ts_sql_load_table_from_file(db_conn, TS_TABLE, colname, args.input_file, args.delimiter)
         if args.measure_attr_idx is None:
             ts_sql_add_default_measure(db_conn, TS_TABLE, DEF_MEASURE)
+        ts_sql_add_keep(db_conn, TS_TABLE)
         
-        density_blocks, length_blocks = d_cube(db_conn, args.num_dense_blocks, dim_attr, measure_attr, args.density_type, args.selection_policy)
+        density_blocks, length_blocks = d_cube(db_conn, args.num_dense_blocks, dim_attr, measure_attr, args.density_type, args.selection_policy, args.copy_table)
         if args.verbose:
             cur = db_conn.cursor()
             for i in range(args.num_dense_blocks):
