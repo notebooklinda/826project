@@ -16,7 +16,7 @@ def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy, c
 
     RN = []
     for col in dim_attr:
-        cur.execute("SELECT distinct %s FROM %s" % (col, TS_TABLE_COPY))
+        cur.execute("SELECT distinct %s FROM %s" % (col, TS_TABLE))
         Rn_list = cur.fetchall()
         Rn = {key:None for (key,) in Rn_list}
         RN.append(Rn)
@@ -25,23 +25,23 @@ def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy, c
     density_blocks = []
     length_blocks = []
     for i in range(k):
-        cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, TS_TABLE_COPY))
+        cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, TS_TABLE))
         mass_R = cur.fetchone()[0]
-        BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy, copy_table)
+        BN = find_single_block(db_conn, TS_TABLE, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy, copy_table)
         
         to_delete = []
         for col, Bn in zip(dim_attr, BN):
             to_delete.append('%s in (%s)' % (col, ', '.join(("'%s'" % n) for n in Bn)))
         where_clause = ' '.join(['WHERE', ' AND '.join(to_delete)])
         
-        cur.execute("DELETE FROM %s %s" % (TS_TABLE_COPY, where_clause))
+        cur.execute("DELETE FROM %s %s" % (TS_TABLE, where_clause))
         db_conn.commit()
         
         result_table = TS_RESULT + str(i)
         result_names.append(result_table)
         ts_sql_table_drop(db_conn, result_table)
 
-        cur.execute("CREATE TABLE %s AS SELECT * FROM %s %s" % (result_table, TS_TABLE, where_clause))
+        cur.execute("CREATE TABLE %s AS SELECT * FROM %s %s" % (result_table, TS_TABLE_COPY, where_clause))
         db_conn.commit()
         
         cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, result_table))
@@ -61,11 +61,17 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
     cur = db_conn.cursor()
 
     if copy_table:
+        print 'Copy %s to %s in find_single_block' % (table_name, TS_TABLE_B)
         # copy R to B
         ts_sql_table_drop(db_conn, TS_TABLE_B)
-        cur.execute("CREATE TABLE %s AS SELECT * FROM %s" % (TS_TABLE_B, table_name))
+        # cur.execute("CREATE TABLE %s AS SELECT * FROM %s" % (TS_TABLE_B, table_name))
+        
+        cur.execute("CREATE TABLE %s (LIKE %s INCLUDING ALL)" % (TS_TABLE_B, table_name))
+        db_conn.commit()
+        cur.execute("INSERT INTO %s SELECT * FROM %s" % (TS_TABLE_B, table_name))
         use_as_B = TS_TABLE_B
     else:
+        print 'Mark keep to True or False in %s' % table_name
         # set R's keep to all True
         cur.execute("UPDATE %s SET keep = True" % table_name)
         use_as_B = table_name
@@ -234,6 +240,13 @@ def main():
     parser.add_argument ('--copy_table', dest='copy_table', type=bool, default=False,
                          help="Copy table mode in find_single_block. default False")
                          
+    # create index
+    parser.add_argument ('--indexing', dest='indexing', type=bool, default=False,
+                         help="Whether or not to add indexing. default False")
+    parser.add_argument ('--indexing_method', dest='indexing_method', type=str, default='btree',
+                         help="Indexing method. default 'btree'")
+
+
     args = parser.parse_args()
     with open(args.input_file) as csv:
         line = csv.next()
@@ -266,12 +279,24 @@ def main():
             ts_sql_add_default_measure(db_conn, TS_TABLE, DEF_MEASURE)
         ts_sql_add_keep(db_conn, TS_TABLE)
         
+        # create indexing
+        if args.indexing:
+            cur = db_conn.cursor()
+            for da in dim_attr:
+                cur.execute("CREATE INDEX %s" % (da + '_idx') +
+                            " ON %s" % TS_TABLE + 
+                            " USING %s" % args.indexing_method +
+                            " (%s)" % da)
+                db_conn.commit()
+                print "Created index with method '%s' on %s" % (args.indexing_method, da)
+        
+        # run d-cube
         density_blocks, length_blocks = d_cube(db_conn, args.num_dense_blocks, dim_attr, measure_attr, args.density_type, args.selection_policy, args.copy_table)
         if args.verbose:
             cur = db_conn.cursor()
             for i in range(args.num_dense_blocks):
                 print '#### result ####'
-                cur.execute("SELECT * FROM %s" %(TS_RESULT+str(i)))
+                cur.execute("SELECT * FROM %s" % (TS_RESULT + str(i)))
                 print cur.fetchall()
         
         
