@@ -6,7 +6,7 @@ from copy import deepcopy
 import numpy as np
 import time
 
-def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_policy):
+def d_cube(db_conn, k, dim_attr, measure_attr, density_type, selection_policy):
     cur = db_conn.cursor()
 
     # copy R to Rori
@@ -27,9 +27,7 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
     for i in range(k):
         cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, TS_TABLE_COPY))
         mass_R = cur.fetchone()[0]
-        BN, density_BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy)
-        density_blocks.append(density_BN)
-        length_blocks.append(len(BN[0]))
+        BN = find_single_block(db_conn, TS_TABLE_COPY, RN, mass_R, density_type, dim_attr, measure_attr, selection_policy)
         
         to_delete = []
         for col, Bn in zip(dim_attr, BN):
@@ -45,11 +43,15 @@ def d_cube(db_conn, k, density, dim_attr, measure_attr, density_type, selection_
 
         cur.execute("CREATE TABLE %s AS SELECT * FROM %s %s" % (result_table, TS_TABLE, where_clause))
         db_conn.commit()
-    
-    # for i in range(k):
-        # print '#### result ####'
-        # cur.execute("SELECT * FROM TS_RESULT%d" %(i))
-        # print cur.fetchall()
+        
+        cur.execute("SELECT sum(%s) FROM %s" % (measure_attr, result_table))
+        mass_B = cur.fetchone()[0]
+        density_B = density(mass_B, BN, mass_R, RN, density_type)
+        density_blocks.append(density_B)
+        
+        
+        cur.execute("SELECT * FROM %s" %(result_table))
+        length_blocks.append(len(cur.fetchall()))
 
     db_conn.commit()
     cur.close()
@@ -104,7 +106,7 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
         BN_idx_list = BN[idx].keys()
         mass_i_array = np.array([mass_BN[idx][n] for n in BN_idx_list])
 
-        D_idx = np.where(mass_i_array <= mass_avg)[0]
+        D_idx = np.where(mass_i_array <= mass_avg + 1e-5)[0]
         Di = [BN_idx_list[i] for i in D_idx]
         Di_sorted_idx = np.argsort([mass_BN[idx][n] for n in Di])
         Di_sorted = [Di[i] for i in Di_sorted_idx]
@@ -131,22 +133,14 @@ def find_single_block(db_conn, table_name, RN, mass_R, density_type, dim_attr, m
 
     B_tilda_N = []
     for i, Rn in enumerate(RN):
-        B_tilda_n = []
+        B_tilda_n_list = []
         for name in Rn.iterkeys():
             if order[i][name] >= r_tilda:
-                B_tilda_n.append(name)
+                B_tilda_n_list.append(name)
+        B_tilda_n = {key:None for key in B_tilda_n_list}
         B_tilda_N.append(B_tilda_n)
     
-    mass_B_tilda_N = 0.0
-    for name in RN[0].iterkeys():
-        if order[0][name] >= r_tilda:
-            mass_B_tilda_N += mass_RN[0][name]
-    
-    
-    # calculate B_tilda_N's density
-    density_B_tilda_N = density(mass_B_tilda_N, B_tilda_N, mass_R, RN, density_type)
-    
-    return B_tilda_N, density_B_tilda_N
+    return B_tilda_N
 
     
 def density(mass_B, BN, mass_R, RN, option):
@@ -158,7 +152,7 @@ def density(mass_B, BN, mass_R, RN, option):
         result = 0.0 if not prod else mass_B/prod**(1.0/len(BN)) 
     elif option == 'susp':
         ratio = np.prod([float(len(Bn))/len(Rn) for Bn, Rn in zip(BN, RN)])
-        result = 0.0 if not mass_B * ratio else mass_B * (np.log(mass_B/mass_R) - 1) + mass_R * ratio - mass_B * np.log(ratio)
+        result = -1.0 if not mass_B * ratio else mass_B * (np.log(mass_B/mass_R) - 1) + mass_R * ratio - mass_B * np.log(ratio)
     else: 
         raise Exception('wrong density measure input')
     return result
@@ -169,7 +163,7 @@ def select_dimension_by_cardinality(BN):
 
 def select_dimension_by_density(BN, RN, mass_BN, mass_B, mass_R, density_type):
     rho_tilda = -np.inf
-    i_tilda = 1
+    i_tilda = 0
     BN_prime = deepcopy(BN)
     
     for idx in range(len(BN)):
@@ -224,7 +218,9 @@ def main():
                          help="Density measure. Choose from 'ari', 'geo', and 'susp'. default 'ari'")
     parser.add_argument ('--selection_policy', dest='selection_policy', type=str, default='cardinality',
                          help="Dimension selection policy. Choose from 'cardinality' or 'density'. default 'cardinality'")
-
+    parser.add_argument ('--verbose', dest='verbose', type=bool, default=False,
+                         help="Print the selected k dense blocks. default 'Not print'")                     
+                         
     args = parser.parse_args()
     with open(args.input_file) as csv:
         line = csv.next()
@@ -256,7 +252,14 @@ def main():
         if args.measure_attr_idx is None:
             ts_sql_add_default_measure(db_conn, TS_TABLE, DEF_MEASURE)
         
-        density_blocks, length_blocks = d_cube(db_conn, args.num_dense_blocks, None, dim_attr, measure_attr, args.density_type, args.selection_policy)
+        density_blocks, length_blocks = d_cube(db_conn, args.num_dense_blocks, dim_attr, measure_attr, args.density_type, args.selection_policy)
+        if args.verbose:
+            cur = db_conn.cursor()
+            for i in range(args.num_dense_blocks):
+                print '#### result ####'
+                cur.execute("SELECT * FROM %s" %(TS_RESULT+str(i)))
+                print cur.fetchall()
+        
         
         print '### RESULT ###'
         for i, density in enumerate(density_blocks):
